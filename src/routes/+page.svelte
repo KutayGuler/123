@@ -2,6 +2,12 @@
   import { onDestroy } from 'svelte';
   import { SvelteMap } from 'svelte/reactivity';
 
+  // rules
+  // total number cannot exceed 13
+  //
+  // TODO: cycle operators
+  // sum all numbers when cycle is completed
+
   const numbers = [1, 2, 3] as const;
 
   const f = {
@@ -15,7 +21,8 @@
   let time = $state(0);
   let cell_count = $state(4);
   let position = $state(0);
-  let operator = $state<keyof typeof f>('_');
+  let operator = $state<keyof typeof f>('+');
+  let operator_index = $state(0);
   let number_slots = $state<Array<(typeof numbers)[number]>>([]);
   let map = $state(new SvelteMap<number, (typeof numbers)[number] | keyof typeof f>());
 
@@ -24,37 +31,24 @@
   function handle(e: KeyboardEvent) {
     if (e.code == 'Space') {
       let item = map.get(position);
-      if (typeof item === 'string' && operator == '_') {
-        operator = item;
-        map.delete(position);
-      } else if (typeof item === 'number' && number_slots.length < 2) {
+      if (typeof item === 'number' && number_slots.length < 2) {
         number_slots.push(item);
         map.delete(position);
       }
 
-      let val_calculated = false;
-      let operator_dropped = false;
-
-      if (number_slots.length == 2 && operator != '_') {
-        for (let i = 0; i < map.size; i++) {
-          let val = map.get(i);
-          if (!val_calculated && val === undefined) {
-            // @ts-expect-error
-            map.set(i, f[operator](...number_slots));
-            number_slots = [];
-            val_calculated = true;
-            continue;
-          }
-
-          if (!operator_dropped && val === undefined) {
-            map.set(i, operator);
-            operator = '_';
-            operator_dropped = true;
-            continue;
-          }
-
-          if (val_calculated && operator_dropped) return;
+      if (number_slots.length == 2) {
+        // @ts-expect-error
+        const res = f[operator](...number_slots);
+        if (res != 0) {
+          // @ts-expect-error
+          map.set(position, res);
+        } else {
+          map.delete(position);
         }
+
+        operator_index++;
+        operator = operators[operator_index % 3];
+        number_slots = [];
       }
 
       return;
@@ -90,17 +84,19 @@
 
   let rand: any;
 
-  // svelte-ignore state_referenced_locally
-  for (let i = 0; i < cell_count * cell_count; i++) {
-    if (i % 5 == 0 || i % 4 == 0) continue;
+  function restart_game() {
+    map = new SvelteMap();
+    restart_interval();
+    // svelte-ignore state_referenced_locally
+    for (let i = 0; i < cell_count * cell_count; i++) {
+      if (i % 3 == 0) {
+        continue;
+      } else {
+        rand = numbers[Math.floor(Math.random() * 3)];
+      }
 
-    if (i % 3 == 0) {
-      rand = operators[Math.floor(Math.random() * operators.length)];
-    } else {
-      rand = [1, 2, 3][Math.floor(Math.random() * 3)];
+      map.set(i, rand);
     }
-
-    map.set(i, rand);
   }
 
   function restart_interval() {
@@ -110,12 +106,12 @@
     interval = setInterval(() => {
       time += 1;
       if (time >= 13) {
-        console.log('game over');
+        restart_game();
       }
     }, 1000);
   }
 
-  restart_interval();
+  restart_game();
 
   onDestroy(() => {
     clearInterval(interval);
@@ -124,20 +120,19 @@
 
 <svelte:window onkeydown={handle} />
 
-<main class="flex flex-col items-center justify-center h-screen gap-8">
+<main
+  class="flex flex-col items-center justify-center h-screen gap-8 bg-purple-950 text-yellow-200"
+>
   <button onclick={restart_interval}>restart</button>
   <div class="flex flex-row gap-4">
-    <span>{number_slots[0]}</span>
-    <span>{operator == '_' ? '' : operator}</span>
-    <span>{number_slots[1]}</span>
+    <div class="cell">{number_slots[0]}</div>
+    <div class="cell">{operator == '_' ? '' : operator}</div>
+    <div class="cell">{number_slots[1]}</div>
   </div>
   <div class="flex flex-wrap size-96 relative">
-    <div class="absolute -top-12 -right-12">{time}</div>
+    <div class="absolute -top-12 -right-12 text-3xl">{time + 1}</div>
     {#each { length: 16 } as _, i}
-      <div
-        class:active={position == i}
-        class="size-24 border border-black flex items-center justify-center"
-      >
+      <div class:active={position == i} class="cell">
         {map.get(i)}
       </div>
     {/each}
@@ -145,11 +140,11 @@
 </main>
 
 <style>
-  .active {
-    border: 5px red solid;
+  .cell {
+    @apply shadow-inner bg-purple-900 font-bold text-5xl size-24  flex items-center justify-center;
   }
 
-  span {
-    @apply flex items-center justify-center size-12 border border-black;
+  .active {
+    @apply bg-purple-700;
   }
 </style>
